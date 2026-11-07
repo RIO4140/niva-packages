@@ -4,6 +4,9 @@
 # والناجح هو الذي يطبع «ناجح». مجلد جديد لكل تشغيل لأن اختبار
 # المخزن يبدأ من مخزن فارغ في الوضعين معا.
 # لا إطار اختبار في لغة Niva بعد — فالسكربت يحكم.
+# واختبارات النشر تعمل ضد خادم محاكٍ لجيت هاب على
+# 127.0.0.1:39401 (tests/mock-github.js) — بلا شبكة
+# حقيقية — وتُشغَّل وحدها برايتي الشبكة المحلية.
 # (أسماء متغيرات الشل لاتينية — معرّفات داخلية لا تظهر للمستخدم؛ وكل النصوص عربية.)
 set -u
 
@@ -20,9 +23,32 @@ cd "$(dirname "$0")/.."
 TMPROOT=".test-tmp"
 rm -rf "$TMPROOT"
 mkdir -p "$TMPROOT"
-trap 'rm -rf "$TMPROOT"' EXIT INT TERM
+MOCK_PID=""
+trap 'rm -rf "$TMPROOT"; if [ -n "$MOCK_PID" ]; then kill "$MOCK_PID" 2>/dev/null; fi' EXIT INT TERM
 passed=0
 failed=0
+
+if [ -f "tests/mock-github.js" ] && command -v node >/dev/null 2>&1; then
+  # قد يبقى محاكٍ قديم عالقا من تشغيل سابق على المنفذ نفسه —
+  # أقتله أولا وإلا اختبرت التشغيلة ضد خادم قديم.
+  fuser -k 39401/tcp 2>/dev/null || true
+  sleep 1
+  node tests/mock-github.js > "$TMPROOT/mock.log" 2>&1 &
+  MOCK_PID=$!
+  ready=0
+  i=0
+  while [ "$i" -lt 10 ]; do
+    if curl -s --max-time 2 "http://127.0.0.1:39401/__صحة" >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 1
+    i=$((i + 1))
+  done
+  if [ "$ready" -eq 0 ]; then
+    echo "تحذير: خادم جيت هاب المحاكي لم يبدأ — اختبارات النشر ستفشل"
+  fi
+fi
 
 run_one() {
   test_file="$1"
@@ -40,10 +66,20 @@ run_one() {
   cp -r tests/fixtures/* "$dir/" 2>/dev/null || true
   cp "$test_file" "$dir/"
   base="$(basename "$test_file")"
+  case "$test_file" in
+    *نشر*)
+      netflags="--اسمح-بالشبكة --مضيف-محلي 127.0.0.1"
+      ;;
+    *)
+      netflags=""
+      ;;
+  esac
   if [ -z "$mode_flag" ]; then
-    out="$("$NIVA" "$dir/$base" 2>/dev/null)"
+    # shellcheck disable=SC2086
+    out="$($NIVA $netflags "$dir/$base" 2>/dev/null)"
   else
-    out="$("$NIVA" "$mode_flag" "$dir/$base" 2>/dev/null)"
+    # shellcheck disable=SC2086
+    out="$($NIVA "$mode_flag" $netflags "$dir/$base" 2>/dev/null)"
   fi
   if printf '%s\n' "$out" | grep -qx "$expect"; then
     echo "ناجح: $test_file ($mode_name)"
