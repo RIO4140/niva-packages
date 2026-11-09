@@ -12,6 +12,13 @@ const PORT = 39401;
 const TOKEN = 'gho_mock_token_123';
 const COMMIT_SHA = '1234567890abcdef1234567890abcdef12345678';
 const BASE_SHA = 'fedcba9876543210fedcba9876543210fedcba98';
+// فحص الفهرس (البند 90): بيانا حزمة وبصمتا التزام
+// لمسارين دقيقين فقط — بلا رد عام — فأي خطأ في بناء
+// العنوان في الفاحص يرده المحاكي 404 لا بيانا صحيحا.
+const CHECK_CLEAN_MANIFEST = 'اسم: حزمة_سليمة\nإصدار: 1.0.0\nوصف: حزمة سليمة للفحص\nدخول: حزمة_سليمة.نيفا\n';
+const CHECK_BROKEN_MANIFEST = 'اسم: حزمة_مكسورة\nإصدار: 2.0.0\nوصف: حزمة مكسورة للفحص\nدخول: حزمة_مكسورة.نيفا\n';
+const CHECK_CLEAN_SHA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const CHECK_BROKEN_SHA = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const INDEX_INITIAL = '# فهرس محاكي — حزمتان للاختبار (واحدة مسحوبة)\n'
   + 'حزمة_وسط 1.0.0 github.com/اختبار/حزمة_وسط v1.0.0 456789abcdef0123456789abcdef0123456789ab مختبر 2026-11-01T00:00:00Z 3e84e62d7e31250193de559710ff74fa86ab366865217a620fa05cf64b70f48f 277 حزمة_صغيرة:^1.0 حزمة وسط للاختبار\n'
   + 'حزمة_قديمة 0.9.0 github.com/اختبار/حزمة_قديمة v0.9.0 6789abcdef0123456789abcdef0123456789abcd مختبر 2026-10-01T00:00:00Z 6789abcdef0123456789abcdef0123456789abcdef0123456789abcdef012345 162 - حزمة قديمة سُحبت كل إصداراتها\n'
@@ -123,6 +130,16 @@ const server = http.createServer((req, res) => {
     // فهرس.حزمة الخام (مركزي أو هدف)
     m = pathname.match(/^\/([^/]+)\/niva-index\/main\/فهرس\.حزمة$/);
     if (req.method === 'GET' && m) return sendText(res, 200, INDEX_INITIAL);
+
+    // فحص الفهرس (البند 90): مسارات صارمة بمسار
+    // دقيق فقط — قبل المسارات العامة — فالمسار
+    // الخاطئ لا يصل إلى الرد العام أبدا.
+    if (req.method === 'GET' && pathname === '/فحص/حزمة_سليمة/v1.0.0/بيان.حزمة') return sendText(res, 200, CHECK_CLEAN_MANIFEST);
+    if (req.method === 'GET' && pathname === '/فحص/حزمة_مكسورة/v2.0.0/بيان.حزمة') return sendText(res, 200, CHECK_BROKEN_MANIFEST);
+    m = pathname.match(/^\/repos\/فحص\/حزمة_سليمة\/commits\/v1\.0\.0$/);
+    if (req.method === 'GET' && m) return sendJson(res, 200, { sha: CHECK_CLEAN_SHA, commit: { message: 'وسم سليم' } });
+    m = pathname.match(/^\/repos\/فحص\/حزمة_مكسورة\/commits\/v2\.0\.0$/);
+    if (req.method === 'GET' && m) return sendJson(res, 200, { sha: CHECK_BROKEN_SHA, commit: { message: 'وسم مكسور' } });
 
     // بيان.حزمة عند وسم (أي مستودع/وسم — المحاكي يرد بالملف نفسه)
     m = pathname.match(/^\/([^/]+)\/([^/]+)\/([^/]+)\/بيان\.حزمة$/);
